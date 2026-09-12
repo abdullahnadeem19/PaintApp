@@ -1,0 +1,26 @@
+Abdullah' Paint  Version 1.1.0 - 09/11/2026
+
+New features:
+  * Open an image file (PNG, JPG,) and display it.
+  * Save the current image back to the file it was opened/saved from
+  * Save As... to choose a new file name, location, and format
+  * File menu bar (Open, Save, Save As, Close Image, Exit) with standard
+  * Close controls: the window's own close button and File > Exit both
+    shut the app down cleanly; File > Close Image clears the canvas
+    without quitting
+
+
+Known issues:
+  * No "unsaved changes" warning yet on Close Image / Exit (there's no
+    editing yet in Sprint 1, so nothing can be un-saved, but this will
+    matter once drawing tools are added)
+  * No zoom / fit-to-window - large images display at full resolution
+    and rely on scroll bars
+  * Save As changes the image format if you change the file extension
+    (e.g. saving "photo.png" as "photo.jpg" re-encodes it as a JPEG)
+
+Expected next sprint:
+  * Basic drawing/editing tools (pencil, shapes, text, fill color)
+  * Zoom in / out and fit-to-window
+  * Undo / redo
+  * "Unsaved changes" confirmation before Close Image / Exit
