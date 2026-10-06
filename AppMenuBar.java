@@ -234,6 +234,8 @@ public class AppMenuBar extends MenuBar {
                     "Use the mouse to draw on the canvas.\n\n"
                             + "Tools: pencil, curve, line, rectangle, square, circle, "
                             + "ellipse, triangle, eraser, and eyedropper (color grabber).\n\n"
+                            + "Clear Canvas (toolbar): wipes the page to blank white after "
+                            + "asking you to confirm. Ctrl+Z brings it back.\n\n"
                             + "Curve tool: drag out a baseline, release, then drag again "
                             + "to bend the curve and release to commit it.\n\n"
                             + "Shortcuts:\n"
