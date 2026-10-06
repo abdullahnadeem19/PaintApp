@@ -1,0 +1,23 @@
+Paint Application Version 1.4.0 - 10/06/2026
+
+New features:
+  * Undo / Redo (Ctrl+Z / Cmd+Z, Ctrl+Y / Cmd+Y),  two history stacks
+  * Clear Canvas, with a confirmation check before wiping the drawing
+  * Right-angle triangle shape
+  * Trapezium shape
+  * Select tool: copy/paste a piece of the image, with a live-drawn
+    selection box and a live-drawn preview of the piece before it's placed
+  * move the entire image in one drag, with a live preview following the cursor
+  * Text tool: click to type and place text on the canvas
+
+Known issues:
+  * Using the Curve tool adds one extra entry to the undo
+    history, since it takes two clicks to commit a curve
+  * Selecting with zero width or height captures nothing (no error,
+    just no-op)
+
+Expected next sprint:
+  * Re-add the ability to select and move (cut) just a piece of the
+    image, as its own clearly-labeled tool
+  * Adjustable text size/font for the Text tool
+

@@ -7,6 +7,9 @@ import javafx.scene.control.TabPane;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyCodeCombination;
+import javafx.scene.input.KeyCombination;
 
 public class Main extends Application {
 
@@ -60,6 +63,25 @@ public class Main extends Application {
         // Create scene
         Scene scene = new Scene(root, 900, 650);
 
+
+
+        scene.getAccelerators().put(
+                new KeyCodeCombination(KeyCode.Z, KeyCombination.CONTROL_DOWN),
+                () -> {
+                    if (tabPane.getSelectionModel().getSelectedItem() instanceof ImageTab) {
+                        ((ImageTab) tabPane.getSelectionModel().getSelectedItem()).getCanvas().undo();
+                    }
+                }
+        );
+
+        scene.getAccelerators().put(
+                new KeyCodeCombination(KeyCode.Y, KeyCombination.CONTROL_DOWN),
+                () -> {
+                    if (tabPane.getSelectionModel().getSelectedItem() instanceof ImageTab) {
+                        ((ImageTab) tabPane.getSelectionModel().getSelectedItem()).getCanvas().redo();
+                    }
+                }
+        );
         // Set title
         stage.setTitle("Paint Application");
 

@@ -1,8 +1,12 @@
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
+import javafx.geometry.Rectangle2D;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.control.TextInputDialog; // new add: for TEXT tool
+import javafx.scene.control.Alert;
+import javafx.scene.control.ButtonType;
 import javafx.scene.image.Image;
 import javafx.scene.image.PixelReader;
 import javafx.scene.image.WritableImage;
@@ -10,6 +14,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 
 import java.util.function.Consumer;
+import java.util.Stack; // new add
 
 
 public class DrawingCanvas extends StackPane {
@@ -20,12 +25,19 @@ public class DrawingCanvas extends StackPane {
         CURVE,
         LINE,
         RECTANGLE,
+        POLYGON,
         SQUARE,
         CIRCLE,
         ELLIPSE,
         TRIANGLE,
+        RIGHT_TRIANGLE,
+        TRAPEZIUM,
         ERASER,
-        EYEDROPPER
+        EYEDROPPER,
+        SELECT,
+        MOVE_SELECTION,
+        TEXT,
+        MOVE_IMAGE
     }
 
     // Dash pattern
@@ -35,12 +47,16 @@ public class DrawingCanvas extends StackPane {
     private final Canvas canvas = new Canvas();
     private final GraphicsContext gc = canvas.getGraphicsContext2D();
 
-    // Transparent canvas on top, used only to preview a shape while dragging
+
     private final Canvas previewCanvas = new Canvas();
     private final GraphicsContext previewGc = previewCanvas.getGraphicsContext2D();
 
     // Keeps track of whether the drawing was changed
     private final BooleanProperty unsavedChanges = new SimpleBooleanProperty(false);
+
+    // new add for 5 Undo/redo history, stored as full-canvas snapshots
+    private final Stack<WritableImage> undoStack = new Stack<>();
+    private final Stack<WritableImage> redoStack = new Stack<>();
 
     // Currently selected tool (defaults to freehand drawing)
     private ShapeType currentShape = ShapeType.FREEHAND;
@@ -70,6 +86,21 @@ public class DrawingCanvas extends StackPane {
     private double curveStartX, curveStartY;
     private double curveEndX, curveEndY;
 
+
+    private boolean backgroundPainted = false;
+
+
+    private double selX, selY, selW, selH;
+    private boolean hasSelection = false;
+    private WritableImage clipboard;
+    private boolean movingSelection = false;
+    private double moveOffsetX;
+    private double moveOffsetY;
+    private int polygonSides = 5;
+
+
+    private WritableImage wholeImageClipboard;
+
     public DrawingCanvas() {
 
 
@@ -78,6 +109,9 @@ public class DrawingCanvas extends StackPane {
         previewCanvas.widthProperty().bind(widthProperty());
         previewCanvas.heightProperty().bind(heightProperty());
 
+
+        canvas.widthProperty().addListener((obs, oldV, newV) -> paintBlankBackgroundOnce());
+        canvas.heightProperty().addListener((obs, oldV, newV) -> paintBlankBackgroundOnce());
 
         getChildren().addAll(canvas, previewCanvas);
 
@@ -94,6 +128,10 @@ public class DrawingCanvas extends StackPane {
 
         // Record starting point
         previewCanvas.setOnMousePressed(event -> {
+
+
+            undoStack.push(canvas.snapshot(new SnapshotParameters(), null));
+            redoStack.clear();
 
             startX = event.getX();
             startY = event.getY();
@@ -124,6 +162,47 @@ public class DrawingCanvas extends StackPane {
                     }
 
                     break;
+
+                case SELECT:
+                    // Stage 0 (no captured piece yet): nothing to do on press itself —
+                    // the drag handler below live-draws the selection rectangle.
+                    // Stage 1 (piece already captured): nothing to do on press either —
+                    // the drag handler live-draws the piece following the cursor.
+                    break;
+
+                case MOVE_SELECTION:
+                    if (hasSelection && clipboard != null) {
+                        movingSelection = true;
+                        moveOffsetX = event.getX() - selX;
+                        moveOffsetY = event.getY() - selY;
+                        gc.clearRect(selX, selY, selW, selH);
+                        gc.setFill(Color.WHITE);
+                        gc.fillRect(selX, selY, selW, selH);
+                    }
+                    break;
+
+                case MOVE_IMAGE:
+                    // Capture the whole picture, then clear it from its current spot —
+                    // the drag handler below live-draws it following the cursor
+                    wholeImageClipboard = canvas.snapshot(new SnapshotParameters(), null);
+                    gc.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
+                    gc.setFill(Color.WHITE);
+                    gc.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
+                    setUnsavedChanges(true);
+                    break;
+
+                case TEXT: {
+                    TextInputDialog dialog = new TextInputDialog();
+                    dialog.setTitle("Add Text");
+                    dialog.setHeaderText("Enter text to place on the canvas:");
+                    dialog.showAndWait().ifPresent(text -> {
+                        gc.setFont(javafx.scene.text.Font.font(Math.max(brushWidth * 2, 12)));
+                        gc.setFill(brushColor);
+                        gc.fillText(text, startX, startY);
+                        setUnsavedChanges(true);
+                    });
+                    break;
+                }
 
                 default:
 
@@ -169,6 +248,46 @@ public class DrawingCanvas extends StackPane {
                     }
                     break;
 
+                case POLYGON:
+                    clearPreview();
+                    drawShape(previewGc, currentShape, startX, startY, event.getX(), event.getY());
+                    break;
+
+                case SELECT:
+                    if (!hasSelection) {
+                        // Live-draw the selection rectangle being dragged out ("marching box")
+                        clearPreview();
+                        double rx = Math.min(startX, x);
+                        double ry = Math.min(startY, y);
+                        double rw = Math.abs(x - startX);
+                        double rh = Math.abs(y - startY);
+                        previewGc.strokeRect(rx, ry, rw, rh);
+                    } else if (clipboard != null) {
+                        // Live-draw the captured piece following the cursor before it's dropped
+                        clearPreview();
+                        previewGc.drawImage(clipboard, x, y);
+                    }
+                    break;
+
+                case MOVE_SELECTION:
+                    if (movingSelection && clipboard != null) {
+                        clearPreview();
+                        previewGc.drawImage(clipboard, x - moveOffsetX, y - moveOffsetY);
+                    }
+                    break;
+
+                case TEXT:
+                    // Text is placed immediately on click; nothing to preview while dragging
+                    break;
+
+                case MOVE_IMAGE:
+                    // Live-draw the whole picture following the cursor, offset by where it was grabbed
+                    if (wholeImageClipboard != null) {
+                        clearPreview();
+                        previewGc.drawImage(wholeImageClipboard, x - startX, y - startY);
+                    }
+                    break;
+
                 default:
                     clearPreview();
                     drawShape(previewGc, currentShape, startX, startY, x, y);
@@ -200,6 +319,62 @@ public class DrawingCanvas extends StackPane {
                         clearPreview();
                         setUnsavedChanges(true);
                         curveStage = 0;
+                    }
+                    break;
+
+                case SELECT:
+                    if (!hasSelection) {
+                        // Finish drawing the selection rectangle and capture its pixels
+                        double x = event.getX();
+                        double y = event.getY();
+
+                        selX = Math.min(startX, x);
+                        selY = Math.min(startY, y);
+                        selW = Math.abs(x - startX);
+                        selH = Math.abs(y - startY);
+                        clearPreview();
+
+                        if (selW > 0 && selH > 0) {
+                            SnapshotParameters params = new SnapshotParameters();
+                            params.setViewport(new Rectangle2D(selX, selY, selW, selH));
+                            clipboard = canvas.snapshot(params, null);
+                            hasSelection = true;
+                        }
+
+                    } else if (clipboard != null) {
+
+                        gc.drawImage(clipboard, event.getX(), event.getY());
+                        clearPreview();
+                        setUnsavedChanges(true);
+                    }
+                    break;
+
+                case MOVE_SELECTION:
+                    if (movingSelection && clipboard != null) {
+                        double newX = event.getX() - moveOffsetX;
+                        double newY = event.getY() - moveOffsetY;
+                        gc.drawImage(clipboard, newX, newY);
+                        clearPreview();
+                        selX = newX;
+                        selY = newY;
+                        movingSelection = false;
+                        setUnsavedChanges(true);
+                    }
+                    break;
+
+                case TEXT:
+
+                    break;
+
+                case MOVE_IMAGE:
+
+                    if (wholeImageClipboard != null) {
+                        double dropX = event.getX() - startX;
+                        double dropY = event.getY() - startY;
+                        gc.drawImage(wholeImageClipboard, dropX, dropY);
+                        clearPreview();
+                        setUnsavedChanges(true);
+                        wholeImageClipboard = null;
                     }
                     break;
 
@@ -254,11 +429,49 @@ public class DrawingCanvas extends StackPane {
     //  Shape/tool selection
 
     public void setShapeType(ShapeType shapeType) {
+        // Ask for the polygon size when the Polygon tool is selected,
+        // not while the mouse is already pressed on the canvas.
+        // This keeps the normal press-drag-release drawing sequence working.
+        if (shapeType == ShapeType.POLYGON) {
+            TextInputDialog dialog = new TextInputDialog(String.valueOf(polygonSides));
+            dialog.setTitle("Polygon");
+            dialog.setHeaderText("Enter the number of sides for the regular polygon:");
+            dialog.setContentText("Number of sides:");
+
+            java.util.Optional<String> result = dialog.showAndWait();
+            if (result.isPresent()) {
+                try {
+                    int sides = Integer.parseInt(result.get().trim());
+                    if (sides >= 3) {
+                        polygonSides = sides;
+                    } else {
+                        new Alert(Alert.AlertType.ERROR,
+                                "A polygon must have at least 3 sides.", ButtonType.OK).showAndWait();
+                        return;
+                    }
+                } catch (NumberFormatException e) {
+                    new Alert(Alert.AlertType.ERROR,
+                            "Please enter a whole number (3 or more).", ButtonType.OK).showAndWait();
+                    return;
+                }
+            } else {
+                return;
+            }
+        }
+
         this.currentShape = shapeType;
 
         // Abandon any in-progress curve if the tool changes mid-curve
         if (shapeType != ShapeType.CURVE) {
             curveStage = 0;
+            clearPreview();
+        }
+
+        // new add: abandon any in-progress selection if the tool changes away from SELECT
+        if (shapeType != ShapeType.SELECT && shapeType != ShapeType.MOVE_SELECTION) {
+            hasSelection = false;
+            clipboard = null;
+            movingSelection = false;
             clearPreview();
         }
     }
@@ -316,11 +529,20 @@ public class DrawingCanvas extends StackPane {
         previewGc.clearRect(0, 0, previewCanvas.getWidth(), previewCanvas.getHeight());
     }
 
+    // new add: fills the canvas white once it has a real size, so new tabs start as a true blank image
+    private void paintBlankBackgroundOnce() {
+        if (!backgroundPainted && canvas.getWidth() > 0 && canvas.getHeight() > 0) {
+            gc.setFill(Color.WHITE);
+            gc.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
+            backgroundPainted = true;
+        }
+    }
+
 
     private void drawQuadCurve(GraphicsContext g,
-                                double x1, double y1,
-                                double cx, double cy,
-                                double x2, double y2) {
+                               double x1, double y1,
+                               double cx, double cy,
+                               double x2, double y2) {
 
         g.beginPath();
         g.moveTo(x1, y1);
@@ -346,6 +568,24 @@ public class DrawingCanvas extends StackPane {
                 g.strokeRect(x, y, w, h);
                 break;
 
+
+            case POLYGON: {
+                int sides = Math.max(3, polygonSides);
+                double radius = Math.hypot(x2 - x1, y2 - y1);
+
+                double[] xPoints = new double[sides];
+                double[] yPoints = new double[sides];
+
+                for (int i = 0; i < sides; i++) {
+                    double angle = 2 * Math.PI * i / sides;
+
+                    xPoints[i] = x1 + radius * Math.cos(angle);
+                    yPoints[i] = y1 + radius * Math.sin(angle);
+                }
+
+                g.strokePolygon(xPoints, yPoints, sides);
+                break;
+            }
             case SQUARE: {
                 double side = Math.max(w, h);
                 double sx = (x2 >= x1) ? x1 : x1 - side;
@@ -373,6 +613,21 @@ public class DrawingCanvas extends StackPane {
                 break;
             }
 
+            case RIGHT_TRIANGLE: {
+                double[] xs = { x, x, x + w };
+                double[] ys = { y, y + h, y + h };
+                g.strokePolygon(xs, ys, 3);
+                break;
+            }
+
+            case TRAPEZIUM: {
+                // Isosceles trapezoid: shorter parallel side on top, full width on the bottom
+                double[] xs = { x + w * 0.25, x + w * 0.75, x + w, x };
+                double[] ys = { y, y, y + h, y + h };
+                g.strokePolygon(xs, ys, 4);
+                break;
+            }
+
             default:
                 break;
         }
@@ -391,6 +646,48 @@ public class DrawingCanvas extends StackPane {
 
         gc.drawImage(image, 0, 0, canvas.getWidth(), canvas.getHeight());
     }
+
+    // new add: wipes the canvas back to a blank white image.
+    // Pushes onto the same undo stack as every other drawing action,
+    // so clearing the canvas can also be undone.
+    public void clearCanvas() {
+
+        undoStack.push(canvas.snapshot(new SnapshotParameters(), null));
+        redoStack.clear();
+
+        gc.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
+        gc.setFill(Color.WHITE);
+        gc.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
+
+        setUnsavedChanges(true);
+    }
+
+    // new add for 5 Undo / Redo
+    // Restores the canvas to its state before the most recent change.
+    public void undo() {
+        if (!undoStack.isEmpty()) {
+            redoStack.push(canvas.snapshot(new SnapshotParameters(), null));
+            WritableImage previous = undoStack.pop();
+            gc.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
+            gc.drawImage(previous, 0, 0);
+            setUnsavedChanges(true);
+        }
+    }
+
+
+    // Re-applies a change that was just undone.
+    public void redo() {
+        if (!redoStack.isEmpty()) {
+            undoStack.push(canvas.snapshot(new SnapshotParameters(), null));
+            WritableImage next = redoStack.pop();
+            gc.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
+            gc.drawImage(next, 0, 0);
+            setUnsavedChanges(true);
+        }
+    }
+
+
+
 
     // Unsaved
 
