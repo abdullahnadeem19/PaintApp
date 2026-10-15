@@ -13,11 +13,10 @@ import javafx.scene.layout.HBox;
  * Creates the toolbar for the Paint Application.
  * It contains drawing tool buttons and a dashed outline toggle,
  * and buttons for selecting different drawing tools.
- * All controls work with the currently active canvas.
  */
 public class DrawingToolBar extends HBox {
 
-    // The canvas that this toolbar's controls currently act on
+    //The canvas that this toolbar's controls currently act on
     private DrawingCanvas activeCanvas;
 
     private final ToggleButton dashedBtn = new ToggleButton("Dashed");
@@ -28,6 +27,7 @@ public class DrawingToolBar extends HBox {
     private final ToggleButton freehandBtn = new ToggleButton("Pencil");
     private final ToggleButton curveBtn = new ToggleButton("Curve");
     private final ToggleButton polybtn  =  new ToggleButton("Polygon");
+    private final ToggleButton starBtn = new ToggleButton("Star");
     private final ToggleButton lineBtn = new ToggleButton("Line");
     private final ToggleButton rectBtn = new ToggleButton("Rectangle");
     private final ToggleButton squareBtn = new ToggleButton("Square");
@@ -69,6 +69,7 @@ public class DrawingToolBar extends HBox {
         setupToolButton(freehandBtn, DrawingCanvas.ShapeType.FREEHAND);
         setupToolButton(curveBtn, DrawingCanvas.ShapeType.CURVE);
         setupToolButton (polybtn,DrawingCanvas.ShapeType.POLYGON);
+        setupToolButton(starBtn, DrawingCanvas.ShapeType.STAR);
         setupToolButton(lineBtn, DrawingCanvas.ShapeType.LINE);
         setupToolButton(rectBtn, DrawingCanvas.ShapeType.RECTANGLE);
         setupToolButton(squareBtn, DrawingCanvas.ShapeType.SQUARE);
@@ -108,7 +109,7 @@ public class DrawingToolBar extends HBox {
 
         getChildren().addAll(
                 new Label("|"),
-                freehandBtn, curveBtn, polybtn,lineBtn, rectBtn, squareBtn, circleBtn, ellipseBtn, triangleBtn, rightTriangleBtn, trapeziumBtn,
+                freehandBtn, curveBtn, polybtn, starBtn, lineBtn, rectBtn, squareBtn, circleBtn, ellipseBtn, triangleBtn, rightTriangleBtn, trapeziumBtn,
                 new Label("|"),
                 eraserBtn, eyedropperBtn,
                 new Label("|"),
@@ -173,19 +174,20 @@ public class DrawingToolBar extends HBox {
             case CURVE:       target = curveBtn; break;
             case LINE:        target = lineBtn; break;
             case POLYGON:     target=  polybtn;break;
+            case STAR:        target = starBtn; break;
             case RECTANGLE:   target = rectBtn; break;
             case SQUARE:      target = squareBtn; break;
             case CIRCLE:      target = circleBtn; break;
             case ELLIPSE:     target = ellipseBtn; break;
             case TRIANGLE:    target = triangleBtn; break;
-            case RIGHT_TRIANGLE: target = rightTriangleBtn; break; // new add
-            case TRAPEZIUM:   target = trapeziumBtn; break; // new add
+            case RIGHT_TRIANGLE: target = rightTriangleBtn; break;
+            case TRAPEZIUM:   target = trapeziumBtn; break;
             case ERASER:      target = eraserBtn; break;
             case EYEDROPPER:  target = eyedropperBtn; break;
-            case SELECT:      target = selectBtn; break; // new add
-            case MOVE_SELECTION: target = moveSelectionBtn; break; // new add
-            case TEXT:        target = textBtn; break; // new add
-            case MOVE_IMAGE:  target = moveImageBtn; break; // new add
+            case SELECT:      target = selectBtn; break;
+            case MOVE_SELECTION: target = moveSelectionBtn; break;
+            case TEXT:        target = textBtn; break;
+            case MOVE_IMAGE:  target = moveImageBtn; break;
             default:          target = freehandBtn; break;
         }
 
