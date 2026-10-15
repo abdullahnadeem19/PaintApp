@@ -26,6 +26,7 @@ public class DrawingCanvas extends StackPane {
         LINE,
         RECTANGLE,
         POLYGON,
+        STAR,
         SQUARE,
         CIRCLE,
         ELLIPSE,
@@ -89,6 +90,14 @@ public class DrawingCanvas extends StackPane {
 
     private boolean backgroundPainted = false;
 
+    // True between mouse-press and mouse-release. Some tools (Move Picture,
+    // Move Selection) temporarily lift pixels off the canvas during a drag, so
+    // autosave must not snapshot mid-gesture or it would save a blank canvas.
+    private boolean gestureInProgress = false;
+
+    // Bumped on every edit; lets autosave tell whether anything is new
+    private long changeCount = 0;
+
 
     private double selX, selY, selW, selH;
     private boolean hasSelection = false;
@@ -97,6 +106,11 @@ public class DrawingCanvas extends StackPane {
     private double moveOffsetX;
     private double moveOffsetY;
     private int polygonSides = 5;
+
+    // Star tool: number of points (4 or more) and how deep the notches cut.
+    // Inner radius = outer radius * STAR_INNER_RATIO (smaller = spikier).
+    private int starPoints = 5;
+    private static final double STAR_INNER_RATIO = 0.4;
 
 
     private WritableImage wholeImageClipboard;
@@ -129,6 +143,7 @@ public class DrawingCanvas extends StackPane {
         // Record starting point
         previewCanvas.setOnMousePressed(event -> {
 
+            gestureInProgress = true;
 
             undoStack.push(canvas.snapshot(new SnapshotParameters(), null));
             redoStack.clear();
@@ -201,6 +216,7 @@ public class DrawingCanvas extends StackPane {
                         gc.fillText(text, startX, startY);
                         setUnsavedChanges(true);
                     });
+                    gestureInProgress = false; // text is complete on press
                     break;
                 }
 
@@ -249,6 +265,7 @@ public class DrawingCanvas extends StackPane {
                     break;
 
                 case POLYGON:
+                case STAR:
                     clearPreview();
                     drawShape(previewGc, currentShape, startX, startY, event.getX(), event.getY());
                     break;
@@ -299,90 +316,94 @@ public class DrawingCanvas extends StackPane {
         // On release, commit the shape to the real canvas and clear the preview
         previewCanvas.setOnMouseReleased(event -> {
 
-            switch (currentShape) {
+            try {
+                switch (currentShape) {
 
-                case FREEHAND:
-                case ERASER:
-                case EYEDROPPER:
-                    // Already handled live during press/drag
-                    break;
+                    case FREEHAND:
+                    case ERASER:
+                    case EYEDROPPER:
+                        // Already handled live during press/drag
+                        break;
 
-                case CURVE:
-                    if (curveStage == 1) {
+                    case CURVE:
+                        if (curveStage == 1) {
 
-                        curveEndX = event.getX();
-                        curveEndY = event.getY();
-                        curveStage = 2;
-                    } else if (curveStage == 2) {
-                        drawQuadCurve(gc, curveStartX, curveStartY,
-                                event.getX(), event.getY(), curveEndX, curveEndY);
-                        clearPreview();
-                        setUnsavedChanges(true);
-                        curveStage = 0;
-                    }
-                    break;
-
-                case SELECT:
-                    if (!hasSelection) {
-                        // Finish drawing the selection rectangle and capture its pixels
-                        double x = event.getX();
-                        double y = event.getY();
-
-                        selX = Math.min(startX, x);
-                        selY = Math.min(startY, y);
-                        selW = Math.abs(x - startX);
-                        selH = Math.abs(y - startY);
-                        clearPreview();
-
-                        if (selW > 0 && selH > 0) {
-                            SnapshotParameters params = new SnapshotParameters();
-                            params.setViewport(new Rectangle2D(selX, selY, selW, selH));
-                            clipboard = canvas.snapshot(params, null);
-                            hasSelection = true;
+                            curveEndX = event.getX();
+                            curveEndY = event.getY();
+                            curveStage = 2;
+                        } else if (curveStage == 2) {
+                            drawQuadCurve(gc, curveStartX, curveStartY,
+                                    event.getX(), event.getY(), curveEndX, curveEndY);
+                            clearPreview();
+                            setUnsavedChanges(true);
+                            curveStage = 0;
                         }
+                        break;
 
-                    } else if (clipboard != null) {
+                    case SELECT:
+                        if (!hasSelection) {
+                            // Finish drawing the selection rectangle and capture its pixels
+                            double x = event.getX();
+                            double y = event.getY();
 
-                        gc.drawImage(clipboard, event.getX(), event.getY());
+                            selX = Math.min(startX, x);
+                            selY = Math.min(startY, y);
+                            selW = Math.abs(x - startX);
+                            selH = Math.abs(y - startY);
+                            clearPreview();
+
+                            if (selW > 0 && selH > 0) {
+                                SnapshotParameters params = new SnapshotParameters();
+                                params.setViewport(new Rectangle2D(selX, selY, selW, selH));
+                                clipboard = canvas.snapshot(params, null);
+                                hasSelection = true;
+                            }
+
+                        } else if (clipboard != null) {
+
+                            gc.drawImage(clipboard, event.getX(), event.getY());
+                            clearPreview();
+                            setUnsavedChanges(true);
+                        }
+                        break;
+
+                    case MOVE_SELECTION:
+                        if (movingSelection && clipboard != null) {
+                            double newX = event.getX() - moveOffsetX;
+                            double newY = event.getY() - moveOffsetY;
+                            gc.drawImage(clipboard, newX, newY);
+                            clearPreview();
+                            selX = newX;
+                            selY = newY;
+                            movingSelection = false;
+                            setUnsavedChanges(true);
+                        }
+                        break;
+
+                    case TEXT:
+
+                        break;
+
+                    case MOVE_IMAGE:
+
+                        if (wholeImageClipboard != null) {
+                            double dropX = event.getX() - startX;
+                            double dropY = event.getY() - startY;
+                            gc.drawImage(wholeImageClipboard, dropX, dropY);
+                            clearPreview();
+                            setUnsavedChanges(true);
+                            wholeImageClipboard = null;
+                        }
+                        break;
+
+                    default:
+                        drawShape(gc, currentShape, startX, startY, event.getX(), event.getY());
                         clearPreview();
                         setUnsavedChanges(true);
-                    }
-                    break;
-
-                case MOVE_SELECTION:
-                    if (movingSelection && clipboard != null) {
-                        double newX = event.getX() - moveOffsetX;
-                        double newY = event.getY() - moveOffsetY;
-                        gc.drawImage(clipboard, newX, newY);
-                        clearPreview();
-                        selX = newX;
-                        selY = newY;
-                        movingSelection = false;
-                        setUnsavedChanges(true);
-                    }
-                    break;
-
-                case TEXT:
-
-                    break;
-
-                case MOVE_IMAGE:
-
-                    if (wholeImageClipboard != null) {
-                        double dropX = event.getX() - startX;
-                        double dropY = event.getY() - startY;
-                        gc.drawImage(wholeImageClipboard, dropX, dropY);
-                        clearPreview();
-                        setUnsavedChanges(true);
-                        wholeImageClipboard = null;
-                    }
-                    break;
-
-                default:
-                    drawShape(gc, currentShape, startX, startY, event.getX(), event.getY());
-                    clearPreview();
-                    setUnsavedChanges(true);
-                    break;
+                        break;
+                }
+            } finally {
+                gestureInProgress = false;
             }
         });
     }
@@ -452,6 +473,34 @@ public class DrawingCanvas extends StackPane {
                 } catch (NumberFormatException e) {
                     new Alert(Alert.AlertType.ERROR,
                             "Please enter a whole number (3 or more).", ButtonType.OK).showAndWait();
+                    return;
+                }
+            } else {
+                return;
+            }
+        }
+
+        // Same idea for the Star tool: ask for the number of points up front
+        if (shapeType == ShapeType.STAR) {
+            TextInputDialog dialog = new TextInputDialog(String.valueOf(starPoints));
+            dialog.setTitle("Star");
+            dialog.setHeaderText("Enter the number of points for the star (4 or more):");
+            dialog.setContentText("Number of points:");
+
+            java.util.Optional<String> result = dialog.showAndWait();
+            if (result.isPresent()) {
+                try {
+                    int points = Integer.parseInt(result.get().trim());
+                    if (points >= 4) {
+                        starPoints = points;
+                    } else {
+                        new Alert(Alert.AlertType.ERROR,
+                                "A star must have at least 4 points.", ButtonType.OK).showAndWait();
+                        return;
+                    }
+                } catch (NumberFormatException e) {
+                    new Alert(Alert.AlertType.ERROR,
+                            "Please enter a whole number (4 or more).", ButtonType.OK).showAndWait();
                     return;
                 }
             } else {
@@ -586,6 +635,29 @@ public class DrawingCanvas extends StackPane {
                 g.strokePolygon(xPoints, yPoints, sides);
                 break;
             }
+            case STAR: {
+                int points = Math.max(4, starPoints);
+                double outer = Math.hypot(x2 - x1, y2 - y1);
+                double inner = outer * STAR_INNER_RATIO;
+
+                // 2 vertices per point: one outer tip, one inner notch
+                int total = points * 2;
+                double[] xPoints = new double[total];
+                double[] yPoints = new double[total];
+
+                for (int i = 0; i < total; i++) {
+                    double r = (i % 2 == 0) ? outer : inner;
+                    // start at -90 degrees so the first tip points straight up
+                    double angle = -Math.PI / 2 + Math.PI * i / points;
+
+                    xPoints[i] = x1 + r * Math.cos(angle);
+                    yPoints[i] = y1 + r * Math.sin(angle);
+                }
+
+                g.strokePolygon(xPoints, yPoints, total);
+                break;
+            }
+
             case SQUARE: {
                 double side = Math.max(w, h);
                 double sx = (x2 >= x1) ? x1 : x1 - side;
@@ -696,7 +768,20 @@ public class DrawingCanvas extends StackPane {
     }
 
     public void setUnsavedChanges(boolean value) {
+        if (value) {
+            changeCount++;
+        }
         unsavedChanges.set(value);
+    }
+
+    // True while the mouse button is held down for a stroke/shape/move
+    public boolean isGestureInProgress() {
+        return gestureInProgress;
+    }
+
+    // Increases every time the drawing is edited
+    public long getChangeCount() {
+        return changeCount;
     }
 
     public BooleanProperty unsavedChangesProperty() {

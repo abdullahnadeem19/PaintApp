@@ -1,5 +1,8 @@
 
 import javafx.scene.control.Alert;
+import javafx.scene.control.CheckMenuItem;
+import javafx.scene.control.RadioMenuItem;
+import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.ColorPicker;
 import javafx.scene.control.CustomMenuItem;
 import javafx.scene.control.Label;
@@ -36,10 +39,16 @@ public class AppMenuBar extends MenuBar {
      * @param fileManager handles opening and saving images
      * @param onClose runs when the application is closed
      * @param onNewTab runs when a new tab is created
+     * @param autoSaver the autosave timer the Autosave menu controls
+     * @param webServer the image web server the Web Server menu controls
+     * @param onOpenBrowser opens the web server's address in a browser
      */
     public AppMenuBar(FileManager fileManager,
                       Runnable onClose,
-                      Runnable onNewTab) {
+                      Runnable onNewTab,
+                      AutoSaver autoSaver,
+                      WebImageServer webServer,
+                      Runnable onOpenBrowser) {
 
         updateColorLabel(Color.BLACK);
 
@@ -47,6 +56,8 @@ public class AppMenuBar extends MenuBar {
                 createFileMenu(fileManager, onClose, onNewTab),
                 createColorMenu(),
                 createLineWidthMenu(),
+                createAutosaveMenu(autoSaver),
+                createWebServerMenu(webServer, onOpenBrowser),
                 createHelpMenu()
         );
     }
@@ -164,6 +175,90 @@ public class AppMenuBar extends MenuBar {
     }
 
     /**
+     * Creates the Autosave menu: an on/off checkbox, a choice of
+     * interval, and an "Autosave Now" command.
+     */
+    private Menu createAutosaveMenu(AutoSaver autoSaver) {
+
+        Menu autosaveMenu = new Menu("Autosave");
+
+        CheckMenuItem enabledItem = new CheckMenuItem("Enable autosave");
+        enabledItem.setSelected(autoSaver.isEnabled());
+        enabledItem.setOnAction(e -> autoSaver.setEnabled(enabledItem.isSelected()));
+
+        // Show / hide the "Next autosave in 0:42" countdown in the status bar
+        CheckMenuItem countdownItem = new CheckMenuItem("Show countdown");
+        countdownItem.selectedProperty().bindBidirectional(autoSaver.countdownVisibleProperty());
+
+        autosaveMenu.getItems().addAll(enabledItem, countdownItem, new SeparatorMenuItem());
+
+        ToggleGroup intervalGroup = new ToggleGroup();
+        int[] seconds = { 15, 30, 60, 120, 300 };
+        String[] labels = { "Every 15 seconds", "Every 30 seconds", "Every minute",
+                            "Every 2 minutes", "Every 5 minutes" };
+
+        for (int i = 0; i < seconds.length; i++) {
+            final int secs = seconds[i];
+            RadioMenuItem item = new RadioMenuItem(labels[i]);
+            item.setToggleGroup(intervalGroup);
+            item.setSelected(secs == autoSaver.getIntervalSeconds());
+            item.setOnAction(e -> autoSaver.setIntervalSeconds(secs));
+            autosaveMenu.getItems().add(item);
+        }
+
+        MenuItem nowItem = new MenuItem("Autosave Now");
+        nowItem.setOnAction(e -> autoSaver.autosaveNow());
+
+        autosaveMenu.getItems().addAll(new SeparatorMenuItem(), nowItem);
+
+        return autosaveMenu;
+    }
+
+    /**
+     * Creates the Web Server menu: start/stop, who may connect, which images
+     * are shared, and a shortcut to open the page in a browser.
+     */
+    private Menu createWebServerMenu(WebImageServer webServer, Runnable onOpenBrowser) {
+
+        Menu webMenu = new Menu("Web Server");
+
+        CheckMenuItem runItem = new CheckMenuItem("Run web server");
+        runItem.setOnAction(e -> {
+            if (runItem.isSelected()) {
+                if (!webServer.start()) {
+                    runItem.setSelected(false);
+                    new Alert(Alert.AlertType.ERROR,
+                            "Could not start the web server:\n" + webServer.getLastError()).showAndWait();
+                }
+            } else {
+                webServer.stop();
+            }
+        });
+        webServer.runningProperty().addListener((obs, was, now) -> runItem.setSelected(now));
+
+        CheckMenuItem networkItem = new CheckMenuItem("Allow other devices on my network");
+        networkItem.setOnAction(e -> webServer.setAllowNetwork(networkItem.isSelected()));
+
+        MenuItem chooseItem = new MenuItem("Choose Images to Share...");
+        chooseItem.setOnAction(e ->
+                ShareImagesDialog.show(webServer.getTabs(), webServer::refreshStatus));
+
+        MenuItem openItem = new MenuItem("Open in Browser");
+        openItem.disableProperty().bind(webServer.runningProperty().not());
+        openItem.setOnAction(e -> onOpenBrowser.run());
+
+        webMenu.getItems().addAll(
+                runItem,
+                networkItem,
+                new SeparatorMenuItem(),
+                chooseItem,
+                openItem
+        );
+
+        return webMenu;
+    }
+
+    /**
      * Creates the File menu with options to create a new tab,
      * open an image, save, save as, and close the application.
      * Each menu item also has a keyboard shortcut.
@@ -195,6 +290,10 @@ public class AppMenuBar extends MenuBar {
                 new KeyCodeCombination(KeyCode.S, KeyCombination.SHORTCUT_DOWN, KeyCombination.SHIFT_DOWN));
         saveAsItem.setOnAction(e -> fileManager.saveAs());
 
+        // Export Copy As (another format, current file untouched)
+        MenuItem exportItem = new MenuItem("Export Copy As...");
+        exportItem.setOnAction(e -> fileManager.exportCopy());
+
         // Close
         MenuItem closeItem = new MenuItem("Close");
         closeItem.setAccelerator(new KeyCodeCombination(KeyCode.Q, KeyCombination.SHORTCUT_DOWN));
@@ -205,6 +304,7 @@ public class AppMenuBar extends MenuBar {
                 openItem,
                 saveItem,
                 saveAsItem,
+                exportItem,
                 new SeparatorMenuItem(),
                 closeItem
         );
@@ -236,6 +336,17 @@ public class AppMenuBar extends MenuBar {
                             + "ellipse, triangle, eraser, and eyedropper (color grabber).\n\n"
                             + "Clear Canvas (toolbar): wipes the page to blank white after "
                             + "asking you to confirm. Ctrl+Z brings it back.\n\n"
+                            + "Autosave (menu): periodically saves tabs that have unsaved \n"
+                            + "changes. Tabs with a file are saved to that file; untitled tabs are \n"
+                            + "backed up to the .paint-autosave folder in your home directory. \n"
+                            + "'Show countdown' displays the time until the next autosave in the \n"
+                            + "status bar; saving by hand restarts the countdown.\n\n"
+                            + "Web Server (menu): presents the images you choose (Choose Images \n"
+                            + "to Share) as a web page. Tick 'Run web server', then 'Open in \n"
+                            + "Browser'. If no image is chosen, the page says so.\n\n"
+                            + "File formats: Save As and Export Copy As can write PNG, JPEG, BMP \n"
+                            + "or GIF. You get a warning when the new format can lose data. \n"
+                            + "Export Copy As leaves your current file untouched.\n\n"
                             + "Curve tool: drag out a baseline, release, then drag again "
                             + "to bend the curve and release to commit it.\n\n"
                             + "Shortcuts:\n"
