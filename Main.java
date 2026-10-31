@@ -38,6 +38,14 @@ public class Main extends Application {
         tabPane = new TabPane();
 
         fileManager = new FileManager(stage);
+        ActivityLogger.setFileSupplier(() -> {
+            Tab active = tabPane.getSelectionModel().getSelectedItem();
+            if (active instanceof ImageTab) {
+                ImageTab imageTab = (ImageTab) active;
+                return imageTab.getFile() == null ? imageTab.getBaseName() : imageTab.getFile().getName();
+            }
+            return "new tab";
+        });
 
         // Status bar (bottom): autosave message, web server status, countdown
         Label autosaveStatusLabel = new Label("");
@@ -46,11 +54,20 @@ public class Main extends Application {
 
         autoSaver = new AutoSaver(
                 tabPane.getTabs(),
-                autosaveStatusLabel::setText
+                message -> {
+                    autosaveStatusLabel.setText(message);
+                    if (message.startsWith("Autosaved")) {
+                        ActivityLogger.log(message);
+                        DesktopNotifications.notify("Paint autosave", message);
+                    }
+                }
         );
 
         // Saving by hand restarts the autosave countdown
-        fileManager.setOnUserSave(autoSaver::resetTimer);
+        fileManager.setOnUserSave(() -> {
+            ActivityLogger.log("Saved image");
+            autoSaver.resetTimer();
+        });
 
         webServer = new WebImageServer(tabPane.getTabs());
         webStatusLabel.textProperty().bind(webServer.statusProperty());
@@ -88,6 +105,7 @@ public class Main extends Application {
                 menuBar.setActiveCanvas(imageTab.getCanvas());
                 toolBar.setActiveCanvas(imageTab.getCanvas());
                 fileManager.setActiveTab(imageTab);
+                ActivityLogger.log("Switched to tab: " + imageTab.getBaseName());
             }
         });
 
@@ -156,6 +174,8 @@ public class Main extends Application {
         // Stop the web server, the timer, and let any in-flight autosave finish
         autoSaver.shutdown();
         webServer.stop();
+        DesktopNotifications.shutdown();
+        ActivityLogger.shutdown();
     }
 
     private void createNewTab() {
@@ -163,6 +183,7 @@ public class Main extends Application {
         tabCount++;
 
         DrawingCanvas canvas = new DrawingCanvas();
+        ActivityLogger.log("Created new tab");
 
         // eyedropper
         canvas.setOnColorPicked(menuBar::updateColorDisplay);
