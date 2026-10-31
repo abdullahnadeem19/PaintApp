@@ -403,6 +403,9 @@ public class DrawingCanvas extends StackPane {
                         break;
                 }
             } finally {
+                if (currentShape != ShapeType.EYEDROPPER) {
+                    ActivityLogger.log("Canvas interaction: " + currentShape);
+                }
                 gestureInProgress = false;
             }
         });
@@ -509,6 +512,7 @@ public class DrawingCanvas extends StackPane {
         }
 
         this.currentShape = shapeType;
+        ActivityLogger.log("Tool selected: " + shapeType);
 
         // Abandon any in-progress curve if the tool changes mid-curve
         if (shapeType != ShapeType.CURVE) {
@@ -719,6 +723,59 @@ public class DrawingCanvas extends StackPane {
         gc.drawImage(image, 0, 0, canvas.getWidth(), canvas.getHeight());
     }
 
+    /** Transform either the existing selection or the complete canvas. */
+    public void transformImage(int degrees, Boolean horizontalFlip, boolean selectionOnly) {
+        if (selectionOnly && (!hasSelection || selW < 1 || selH < 1)) {
+            new Alert(Alert.AlertType.INFORMATION, "Use the Select tool to drag a region first.", ButtonType.OK).showAndWait();
+            return;
+        }
+        if (gestureInProgress) return;
+        double x = selectionOnly ? Math.max(0, Math.floor(selX)) : 0;
+        double y = selectionOnly ? Math.max(0, Math.floor(selY)) : 0;
+        double right = selectionOnly ? Math.min(canvas.getWidth(), Math.ceil(selX + selW)) : canvas.getWidth();
+        double bottom = selectionOnly ? Math.min(canvas.getHeight(), Math.ceil(selY + selH)) : canvas.getHeight();
+        int w = (int) Math.max(0, right - x), h = (int) Math.max(0, bottom - y);
+        if (w == 0 || h == 0) return;
+        SnapshotParameters params = new SnapshotParameters();
+        params.setViewport(new Rectangle2D(x, y, w, h));
+        WritableImage original = canvas.snapshot(params, null);
+        WritableImage changed = horizontalFlip == null ? ImageTransform.rotate(original, degrees)
+                : ImageTransform.flip(original, horizontalFlip);
+        undoStack.push(canvas.snapshot(new SnapshotParameters(), null));
+        redoStack.clear();
+        gc.setFill(Color.WHITE);
+        if (selectionOnly) {
+            gc.fillRect(x, y, w, h);
+            // Keep transformed selection fully visible on the canvas.
+            double drawW = Math.min(changed.getWidth(), canvas.getWidth() - x);
+            double drawH = Math.min(changed.getHeight(), canvas.getHeight() - y);
+            gc.drawImage(changed, x, y, drawW, drawH);
+            selX = x; selY = y; selW = drawW; selH = drawH;
+            clipboard = canvas.snapshot(selectionViewport(), null);
+        } else {
+            gc.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
+            gc.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
+            // Fit the whole rotated image without cropping/distorting proportions.
+            double scale = Math.min(canvas.getWidth() / changed.getWidth(),
+                                    canvas.getHeight() / changed.getHeight());
+            double dw = changed.getWidth() * scale, dh = changed.getHeight() * scale;
+            gc.drawImage(changed, (canvas.getWidth() - dw) / 2,
+                         (canvas.getHeight() - dh) / 2, dw, dh);
+            hasSelection = false; clipboard = null;
+        }
+        clearPreview();
+        setUnsavedChanges(true);
+        ActivityLogger.log((selectionOnly ? "Selection " : "Canvas ") +
+                (horizontalFlip == null ? "rotated " + degrees + " degrees" :
+                        horizontalFlip ? "flipped horizontally" : "flipped vertically"));
+    }
+
+    private SnapshotParameters selectionViewport() {
+        SnapshotParameters params = new SnapshotParameters();
+        params.setViewport(new Rectangle2D(selX, selY, selW, selH));
+        return params;
+    }
+
     // new add: wipes the canvas back to a blank white image.
     // Pushes onto the same undo stack as every other drawing action,
     // so clearing the canvas can also be undone.
@@ -732,6 +789,7 @@ public class DrawingCanvas extends StackPane {
         gc.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
 
         setUnsavedChanges(true);
+        ActivityLogger.log("Clear canvas");
     }
 
     // new add for 5 Undo / Redo

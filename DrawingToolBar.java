@@ -6,6 +6,9 @@ import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
+import javafx.scene.control.Tooltip;
+import javafx.scene.shape.SVGPath;
+import javafx.scene.paint.Color;
 import javafx.scene.layout.HBox;
 
 
@@ -104,6 +107,43 @@ public class DrawingToolBar extends HBox {
             }
         });
 
+        // Only geometric shape tools display icons. Other tools retain text labels.
+        String[] shapePaths = {
+                "M 3 17 C 5 4 11 4 13 13 S 20 22 21 7", // Curve
+                "M 12 2 L 21 9 L 18 20 L 6 20 L 2 9 Z", // Polygon
+                "M 12 2 L 14.8 9 L 22 9 L 16.3 13.8 L 18.5 21 L 12 16.7 L 5.5 21 L 7.7 13.8 L 2 9 L 9.2 9 Z", // Star
+                "M 4 20 L 20 4", // Line
+                "M 2 7 H 22 V 17 H 2 Z", // Rectangle
+                "M 5 5 H 19 V 19 H 5 Z", // Square
+                "M 12 3 A 9 9 0 1 0 12 21 A 9 9 0 1 0 12 3 Z", // Circle
+                "M 12 6 A 10 6 0 1 0 12 18 A 10 6 0 1 0 12 6 Z", // Ellipse
+                "M 12 3 L 22 20 H 2 Z", // Triangle
+                "M 4 4 L 4 20 H 21 Z", // Right triangle
+                "M 7 5 H 17 L 22 19 H 2 Z" // Trapezium
+        };
+        ToggleButton[] shapeButtons = {curveBtn, polybtn, starBtn, lineBtn,
+                rectBtn, squareBtn, circleBtn, ellipseBtn, triangleBtn,
+                rightTriangleBtn, trapeziumBtn};
+        for (int i = 0; i < shapeButtons.length; i++) {
+            ToggleButton button = shapeButtons[i];
+            String label = button.getText();
+            button.setGraphic(makeShapeIcon(shapePaths[i]));
+            button.setText("");
+            button.setTooltip(new Tooltip(label));
+            button.setAccessibleText(label);
+            button.setPrefSize(38, 36);
+            button.setMinSize(38, 36);
+        }
+        // Non-shape tools retain their original text, with hover tooltips.
+        ToggleButton[] otherTools = {freehandBtn, eraserBtn, eyedropperBtn,
+                selectBtn, moveSelectionBtn, textBtn, moveImageBtn};
+        for (ToggleButton button : otherTools) {
+            button.setGraphic(null);
+            button.setTooltip(new Tooltip(button.getText()));
+        }
+        dashedBtn.setTooltip(new Tooltip("Toggle dashed outlines"));
+        clearBtn.setTooltip(new Tooltip("Clear the whole canvas (asks first)"));
+
         // Select the button matching the canvas's current tool (defaults to pencil)
         freehandBtn.setSelected(true);
 
@@ -119,6 +159,18 @@ public class DrawingToolBar extends HBox {
                 new Label("|"),
                 clearBtn
         );
+    }
+
+    /** Creates an outlined, scale-independent 24x24 vector toolbar icon. */
+    private SVGPath makeShapeIcon(String svgPath) {
+        SVGPath icon = new SVGPath();
+        icon.setContent(svgPath);
+        icon.setFill(Color.TRANSPARENT);
+        icon.setStroke(Color.web("#25364a"));
+        icon.setStrokeWidth(1.8);
+        icon.setStrokeLineCap(javafx.scene.shape.StrokeLineCap.ROUND);
+        icon.setStrokeLineJoin(javafx.scene.shape.StrokeLineJoin.ROUND);
+        return icon;
     }
 
     /**

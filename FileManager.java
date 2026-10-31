@@ -47,6 +47,7 @@ public class FileManager {
 
     // Opens an image into the active tab
     public void openImage() {
+        ActivityLogger.log("Open image dialog");
 
         if (activeTab == null) {
             return;
@@ -106,6 +107,7 @@ public class FileManager {
     // Saves the active tab's image to a new file. The tab now belongs to that
     // file (and its format), so later Save / autosave write to it.
     public void saveAs() {
+        ActivityLogger.log("Save As selected");
 
         if (activeTab == null) {
             return;
@@ -127,6 +129,7 @@ public class FileManager {
     // format and unsaved state, so you can convert without changing what
     // Save / autosave write to.
     public void exportCopy() {
+        ActivityLogger.log("Export Copy selected");
 
         if (activeTab == null) {
             return;

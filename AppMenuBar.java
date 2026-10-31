@@ -56,6 +56,7 @@ public class AppMenuBar extends MenuBar {
                 createFileMenu(fileManager, onClose, onNewTab),
                 createColorMenu(),
                 createLineWidthMenu(),
+                createTransformMenu(),
                 createAutosaveMenu(autoSaver),
                 createWebServerMenu(webServer, onOpenBrowser),
                 createHelpMenu()
@@ -184,7 +185,7 @@ public class AppMenuBar extends MenuBar {
 
         CheckMenuItem enabledItem = new CheckMenuItem("Enable autosave");
         enabledItem.setSelected(autoSaver.isEnabled());
-        enabledItem.setOnAction(e -> autoSaver.setEnabled(enabledItem.isSelected()));
+        enabledItem.setOnAction(e -> { autoSaver.setEnabled(enabledItem.isSelected()); ActivityLogger.log("Autosave " + (enabledItem.isSelected() ? "enabled" : "disabled")); DesktopNotifications.notify("Paint autosave", enabledItem.isSelected() ? "Autosave enabled" : "Autosave disabled"); });
 
         // Show / hide the "Next autosave in 0:42" countdown in the status bar
         CheckMenuItem countdownItem = new CheckMenuItem("Show countdown");
@@ -317,6 +318,33 @@ public class AppMenuBar extends MenuBar {
      * The Help option shows instructions for using the
      * drawing tools and keyboard shortcuts.
      */
+    private Menu createTransformMenu() {
+        Menu transform = new Menu("Transform");
+        Menu entire = new Menu("Whole Canvas");
+        Menu selected = new Menu("Selection");
+        addTransformActions(entire, false);
+        addTransformActions(selected, true);
+        transform.getItems().addAll(entire, selected);
+        return transform;
+    }
+
+    private void addTransformActions(Menu menu, boolean selectionOnly) {
+        for (int degrees : new int[]{90, 180, 270}) {
+            MenuItem item = new MenuItem("Rotate " + degrees + "° clockwise");
+            item.setOnAction(e -> { if (activeCanvas != null)
+                activeCanvas.transformImage(degrees, null, selectionOnly); });
+            menu.getItems().add(item);
+        }
+        menu.getItems().add(new SeparatorMenuItem());
+        MenuItem horizontal = new MenuItem("Flip Horizontal (left / right)");
+        horizontal.setOnAction(e -> { if (activeCanvas != null)
+            activeCanvas.transformImage(0, true, selectionOnly); });
+        MenuItem vertical = new MenuItem("Flip Vertical (top / bottom)");
+        vertical.setOnAction(e -> { if (activeCanvas != null)
+            activeCanvas.transformImage(0, false, selectionOnly); });
+        menu.getItems().addAll(horizontal, vertical);
+    }
+
     private Menu createHelpMenu() {
 
         Menu helpMenu = new Menu("Help");
